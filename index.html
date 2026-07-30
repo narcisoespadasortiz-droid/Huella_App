@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Huella — control de paseos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #EFECE2;
+    --panel: #F7F5EE;
+    --ink: #23281F;
+    --ink-soft: #63695A;
+    --sage: #5F7A52;
+    --sage-dk: #3F5738;
+    --ochre: #B9812A;
+    --brick: #A44536;
+    --line: rgba(35,40,31,0.12);
+    --line-soft: rgba(35,40,31,0.06);
+  }
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{ margin:0; padding:0; background:var(--bg); color:var(--ink); font-family:'Inter',sans-serif; }
+  body{
+    min-height:100vh;
+    padding: max(20px, env(safe-area-inset-top)) 16px 40px;
+    background-image:
+      radial-gradient(circle at 15% 8%, rgba(95,122,82,0.08), transparent 40%),
+      radial-gradient(circle at 90% 25%, rgba(185,129,42,0.08), transparent 45%);
+  }
+  .wrap{ max-width: 480px; margin: 0 auto; }
+
+  .eyebrow{ font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--sage-dk); font-weight:600; margin:0 0 2px; }
+  h1{ font-family:'Big Shoulders Display', sans-serif; font-weight:800; font-size:40px; line-height:0.9; margin:0 0 4px; letter-spacing:.01em; }
+  .sub{ color:var(--ink-soft); font-size:13.5px; margin:0 0 18px; }
+
+  .card{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:14px; }
+
+  /* trail canvas — signature element */
+  .trailcard{ padding:0; overflow:hidden; position:relative; }
+  .trailhead{ display:flex; align-items:center; justify-content:space-between; padding:12px 14px 0; }
+  .trailhead .label{ font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-soft); font-weight:600; }
+  .status-pill{ font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; background:var(--line-soft); color:var(--ink-soft); }
+  .status-pill.live{ background:var(--sage); color:#fff; }
+  #trailCanvas{ display:block; width:100%; height:180px; }
+  .accuracy-note{ font-size:11px; color:var(--ink-soft); padding:6px 14px 12px; }
+
+  /* stat readout */
+  .stats-row{ display:flex; }
+  .stat{ flex:1; text-align:center; padding: 8px 4px; }
+  .stat + .stat{ border-left:1px solid var(--line); }
+  .stat .n{ font-family:'Big Shoulders Display', sans-serif; font-weight:700; font-size:30px; line-height:1; }
+  .stat .u{ font-size:10.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.08em; margin-top:3px; }
+  .stat.distancia .n{ color:var(--sage-dk); }
+  .stat.pasos .n{ color:var(--ink); }
+  .stat.kcal .n{ color:var(--ochre); }
+
+  .subrow{ display:flex; justify-content:space-between; padding: 10px 4px 2px; font-size:12.5px; color:var(--ink-soft); border-top:1px solid var(--line); margin-top:8px; }
+  .subrow b{ color:var(--ink); font-weight:600; }
+
+  /* controls */
+  .controls{ display:flex; align-items:center; justify-content:center; gap:16px; margin: 22px 0 10px; }
+  .btn-main{
+    width:96px; height:96px; border-radius:50%; border:none; cursor:pointer;
+    font-family:'Big Shoulders Display', sans-serif; font-weight:700; font-size:16px; letter-spacing:.03em; text-transform:uppercase;
+    background: var(--sage-dk); color:#fff; box-shadow: 0 6px 16px rgba(63,87,56,0.28);
+    transition: transform .12s ease;
+  }
+  .btn-main:active{ transform: scale(0.95); }
+  .btn-main.stop{ background: var(--brick); box-shadow: 0 6px 16px rgba(164,69,54,0.28); }
+  .btn-ghost{
+    width:52px; height:52px; border-radius:50%; border:1px solid var(--line); background:var(--panel);
+    color:var(--ink); font-size:20px; cursor:pointer;
+  }
+
+  /* settings */
+  .settings-toggle{ display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
+  .settings-toggle .label{ font-size:12.5px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.08em; }
+  .settings-body{ display:none; margin-top:12px; }
+  .settings-body.open{ display:block; }
+  .field{ display:flex; align-items:center; justify-content:space-between; padding:9px 0; border-top:1px solid var(--line-soft); }
+  .field label{ font-size:14px; }
+  .field input{ width:84px; text-align:right; font-family:'Inter'; font-size:15px; font-weight:600; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:6px 8px; background:#fff; }
+  .hint{ font-size:11.5px; color:var(--ink-soft); margin-top:6px; }
+
+  /* history */
+  .history-item{ display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-top:1px solid var(--line-soft); }
+  .history-item:first-child{ border-top:none; }
+  .history-item .date{ font-size:13px; color:var(--ink-soft); width:76px; flex-shrink:0; }
+  .history-item .mid{ flex:1; font-size:13.5px; }
+  .history-item .mid b{ color:var(--sage-dk); }
+  .history-item .kcal{ font-size:13px; color:var(--ochre); font-weight:600; }
+  .empty{ text-align:center; color:var(--ink-soft); font-size:13px; padding: 10px 0; }
+
+  h2.section{ font-family:'Big Shoulders Display', sans-serif; font-weight:700; font-size:19px; margin:0 0 8px; }
+
+  .save-toast{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px);
+    background:var(--sage-dk); color:#fff; font-size:13px; font-weight:600;
+    padding:10px 18px; border-radius:30px; opacity:0; transition: all .25s ease; pointer-events:none;
+  }
+  .save-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Paseo de hoy</p>
+  <h1>Huella</h1>
+  <p class="sub">Distancia por GPS, pasos estimados y calorías — pensado para tu caminata diaria.</p>
+
+  <div class="card trailcard">
+    <div class="trailhead">
+      <span class="label">Recorrido en vivo</span>
+      <span class="status-pill" id="statusPill">Detenido</span>
+    </div>
+    <canvas id="trailCanvas"></canvas>
+    <div class="accuracy-note" id="accuracyNote">Pulsa Empezar y concede acceso a tu ubicación.</div>
+  </div>
+
+  <div class="card">
+    <div class="stats-row">
+      <div class="stat distancia"><div class="n" id="statDist">0.00</div><div class="u">km</div></div>
+      <div class="stat pasos"><div class="n" id="statSteps">0</div><div class="u">pasos</div></div>
+      <div class="stat kcal"><div class="n" id="statKcal">0</div><div class="u">kcal</div></div>
+    </div>
+    <div class="subrow">
+      <span>Tiempo: <b id="statTime">00:00</b></span>
+      <span>Ritmo: <b id="statPace">—</b></span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn-ghost" id="btnPause" style="display:none;">⏸</button>
+    <button class="btn-main" id="btnMain">Empezar</button>
+    <button class="btn-ghost" id="btnStop" style="display:none;">■</button>
+  </div>
+
+  <div class="card">
+    <div class="settings-toggle" id="settingsToggle">
+      <span class="label">Ajustes personales</span>
+      <span id="settingsArrow">▾</span>
+    </div>
+    <div class="settings-body" id="settingsBody">
+      <div class="field">
+        <label>Peso (kg)</label>
+        <input type="number" id="inputWeight" inputmode="decimal" placeholder="75">
+      </div>
+      <div class="field">
+        <label>Longitud de zancada (cm)</label>
+        <input type="number" id="inputStride" inputmode="decimal" placeholder="75">
+      </div>
+      <p class="hint">La zancada media de un adulto ronda 70–80 cm. Ajústala si notas que los pasos estimados se alejan mucho de la realidad. Estos datos solo se usan para calcular pasos y calorías, y se guardan únicamente en tu móvil.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 class="section">Historial</h2>
+    <div id="historyList"><div class="empty">Aún no hay paseos guardados.</div></div>
+  </div>
+</div>
+
+<div class="save-toast" id="saveToast">Paseo guardado</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const canvas = $('trailCanvas');
+  const ctx = canvas.getContext('2d');
+
+  let watchId = null;
+  let tracking = false;
+  let paused = false;
+  let points = []; // {lat, lon, t}
+  let pathPx = []; // canvas-space points for drawing
+  let distanceM = 0;
+  let startTime = null;
+  let elapsedBeforePause = 0;
+  let timerInterval = null;
+  let weightKg = 75;
+  let strideM = 0.75;
+  let lastGoodFix = null;
+
+  // ---------- storage (localStorage: funciona en el navegador del móvil, fuera de Claude) ----------
+  const STORAGE_OK = (function(){
+    try{ const k='__huella_test__'; localStorage.setItem(k,'1'); localStorage.removeItem(k); return true; }
+    catch(e){ return false; }
+  })();
+
+  async function loadSettings(){
+    if(STORAGE_OK){
+      try{
+        const raw = localStorage.getItem('huella:settings');
+        if(raw){
+          const s = JSON.parse(raw);
+          if(s.weight) weightKg = s.weight;
+          if(s.stride) strideM = s.stride;
+        }
+      }catch(e){}
+    }
+    $('inputWeight').value = weightKg;
+    $('inputStride').value = Math.round(strideM*100);
+  }
+  async function saveSettings(){
+    weightKg = parseFloat($('inputWeight').value) || weightKg;
+    strideM = (parseFloat($('inputStride').value) || (strideM*100)) / 100;
+    if(STORAGE_OK){
+      try{ localStorage.setItem('huella:settings', JSON.stringify({weight: weightKg, stride: strideM})); }catch(e){}
+    }
+  }
+  async function loadHistory(){
+    if(STORAGE_OK){
+      try{
+        const raw = localStorage.getItem('huella:history');
+        if(raw) return JSON.parse(raw);
+      }catch(e){}
+    }
+    return [];
+  }
+  async function saveWalk(record){
+    const hist = await loadHistory();
+    hist.unshift(record);
+    if(STORAGE_OK){
+      try{ localStorage.setItem('huella:history', JSON.stringify(hist.slice(0,60))); }catch(e){}
+    }
+    renderHistory(hist);
+  }
+  function renderHistory(hist){
+    const el = $('historyList');
+    if(!hist || hist.length===0){ el.innerHTML = '<div class="empty">Aún no hay paseos guardados.</div>'; return; }
+    el.innerHTML = hist.map(h => `
+      <div class="history-item">
+        <span class="date">${h.date}</span>
+        <span class="mid"><b>${h.distance} km</b> · ${h.steps} pasos · ${h.duration}</span>
+        <span class="kcal">${h.kcal} kcal</span>
+      </div>`).join('');
+  }
+
+  // ---------- settings UI ----------
+  $('settingsToggle').addEventListener('click', () => {
+    const body = $('settingsBody');
+    const open = body.classList.toggle('open');
+    $('settingsArrow').textContent = open ? '▴' : '▾';
+  });
+  $('inputWeight').addEventListener('change', saveSettings);
+  $('inputStride').addEventListener('change', saveSettings);
+
+  // ---------- geo math ----------
+  function haversine(lat1, lon1, lat2, lon2){
+    const R = 6371000;
+    const dLat = (lat2-lat1) * Math.PI/180;
+    const dLon = (lon2-lon1) * Math.PI/180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
+  function metForSpeed(kmh){
+    if(kmh < 3.2) return 2.0;
+    if(kmh < 4.8) return 2.8;
+    if(kmh < 5.5) return 3.3;
+    if(kmh < 6.4) return 4.3;
+    if(kmh < 7.2) return 5.0;
+    return 6.0;
+  }
+
+  // ---------- canvas trail ----------
+  function resizeCanvas(){
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    drawTrail();
+  }
+  window.addEventListener('resize', resizeCanvas);
+
+  function drawTrail(){
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    ctx.clearRect(0,0,w,h);
+    // contour-line background
+    ctx.strokeStyle = 'rgba(95,122,82,0.10)';
+    ctx.lineWidth = 1;
+    for(let i=0;i<5;i++){
+      ctx.beginPath();
+      const yy = (h/5)*i + 14;
+      ctx.moveTo(0, yy);
+      for(let x=0;x<=w;x+=20){ ctx.lineTo(x, yy + Math.sin((x/40)+i)*6); }
+      ctx.stroke();
+    }
+    if(points.length < 1) return;
+    // project lat/lon to local meters relative to first point, then fit to canvas
+    const lat0 = points[0].lat, lon0 = points[0].lon;
+    const mPerDegLat = 111320;
+    const mPerDegLon = 111320 * Math.cos(lat0*Math.PI/180);
+    const proj = points.map(p => ({
+      x: (p.lon-lon0)*mPerDegLon,
+      y: -(p.lat-lat0)*mPerDegLat
+    }));
+    let minX=0,maxX=0,minY=0,maxY=0;
+    proj.forEach(p=>{ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y); });
+    const spanX = Math.max(maxX-minX, 20), spanY = Math.max(maxY-minY, 20);
+    const pad = 24;
+    const scale = Math.min((w-2*pad)/spanX, (h-2*pad)/spanY);
+    const cx = w/2, cy = h/2;
+    const midX = (minX+maxX)/2, midY=(minY+maxY)/2;
+    const toPx = p => ({ x: cx + (p.x-midX)*scale, y: cy + (p.y-midY)*scale });
+
+    ctx.strokeStyle = '#5F7A52';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    proj.forEach((p,i)=>{ const px = toPx(p); if(i===0) ctx.moveTo(px.x,px.y); else ctx.lineTo(px.x,px.y); });
+    ctx.stroke();
+
+    // start marker
+    const startPx = toPx(proj[0]);
+    ctx.fillStyle = '#B9812A';
+    ctx.beginPath(); ctx.arc(startPx.x, startPx.y, 4, 0, 7); ctx.fill();
+    // current position marker
+    const lastPx = toPx(proj[proj.length-1]);
+    ctx.fillStyle = '#A44536';
+    ctx.beginPath(); ctx.arc(lastPx.x, lastPx.y, 5, 0, 7); ctx.fill();
+  }
+
+  // ---------- tracking ----------
+  function fmtTime(sec){
+    const m = Math.floor(sec/60).toString().padStart(2,'0');
+    const s = Math.floor(sec%60).toString().padStart(2,'0');
+    return `${m}:${s}`;
+  }
+  function currentElapsedSec(){
+    if(!startTime) return elapsedBeforePause/1000;
+    return (elapsedBeforePause + (paused ? 0 : (Date.now()-startTime))) / 1000;
+  }
+  function updateStats(){
+    const distKm = distanceM/1000;
+    const elapsedSec = currentElapsedSec();
+    const elapsedH = elapsedSec/3600;
+    const kmh = elapsedH>0 ? distKm/elapsedH : 0;
+    const met = metForSpeed(kmh || 4);
+    const kcal = met * weightKg * elapsedH;
+    const steps = Math.round(distanceM / strideM);
+    $('statDist').textContent = distKm.toFixed(2);
+    $('statSteps').textContent = steps.toLocaleString('es-ES');
+    $('statKcal').textContent = Math.round(kcal).toLocaleString('es-ES');
+    $('statTime').textContent = fmtTime(elapsedSec);
+    $('statPace').textContent = (distKm>0.05 && elapsedSec>10) ? `${(elapsedSec/60/distKm).toFixed(1)} min/km` : '—';
+  }
+
+  function onPosition(pos){
+    const {latitude, longitude, accuracy} = pos.coords;
+    const now = Date.now();
+    if(accuracy && accuracy > 30){
+      $('accuracyNote').textContent = `Señal GPS débil (±${Math.round(accuracy)} m) — busca cielo abierto.`;
+      return;
+    }
+    const newPoint = {lat: latitude, lon: longitude, t: now};
+    if(lastGoodFix){
+      const d = haversine(lastGoodFix.lat, lastGoodFix.lon, newPoint.lat, newPoint.lon);
+      const dt = (now - lastGoodFix.t)/1000;
+      const speed = dt>0 ? d/dt : 0;
+      if(speed > 3.3){ // ~12 km/h, filtra saltos de GPS poco realistas al caminar
+        return;
+      }
+      if(d < 1){ return; } // ruido/estático
+      distanceM += d;
+    }
+    lastGoodFix = newPoint;
+    points.push(newPoint);
+    $('accuracyNote').textContent = `Buena señal (±${Math.round(accuracy)} m) · ${points.length} puntos`;
+    drawTrail();
+    updateStats();
+  }
+  function onPositionError(err){
+    let msg;
+    switch(err.code){
+      case 1: // PERMISSION_DENIED
+        msg = 'Permiso de ubicación bloqueado. En Chrome, toca el icono de candado/ajustes junto a la dirección → Permisos del sitio → Ubicación → Permitir. Revisa también que en Ajustes del móvil → Apps → Chrome → Permisos → Ubicación esté activado.';
+        break;
+      case 2: // POSITION_UNAVAILABLE
+        msg = 'El móvil no consigue señal GPS ahora mismo. Comprueba que la ubicación esté activada en Ajustes del sistema (no solo en Chrome) y que no estés en interior.';
+        break;
+      case 3: // TIMEOUT
+        msg = 'Tardando en encontrar tu posición. Sal a cielo abierto y espera unos segundos — se irá corrigiendo solo.';
+        break;
+      default:
+        msg = 'No se pudo acceder a tu ubicación. Revisa los permisos de localización del navegador y del sistema.';
+    }
+    $('accuracyNote').textContent = msg;
+  }
+
+  function startTracking(){
+    if(!navigator.geolocation){
+      $('accuracyNote').textContent = 'Este navegador no soporta geolocalización.';
+      return;
+    }
+    tracking = true; paused = false;
+    points = []; pathPx = []; distanceM = 0; lastGoodFix = null;
+    startTime = Date.now(); elapsedBeforePause = 0;
+    $('statusPill').textContent = 'En vivo'; $('statusPill').classList.add('live');
+    $('btnMain').style.display = 'none';
+    $('btnPause').style.display = 'flex'; $('btnPause').style.alignItems='center'; $('btnPause').style.justifyContent='center'; $('btnPause').textContent='⏸';
+    $('btnStop').style.display = 'flex'; $('btnStop').style.alignItems='center'; $('btnStop').style.justifyContent='center';
+    watchId = navigator.geolocation.watchPosition(onPosition, onPositionError, {
+      enableHighAccuracy: true, maximumAge: 2000, timeout: 10000
+    });
+    timerInterval = setInterval(updateStats, 1000);
+  }
+  function togglePause(){
+    if(!tracking) return;
+    if(!paused){
+      paused = true;
+      elapsedBeforePause += Date.now()-startTime;
+      $('btnPause').textContent = '▶';
+      $('statusPill').textContent = 'Pausado'; $('statusPill').classList.remove('live');
+    } else {
+      paused = false;
+      startTime = Date.now();
+      $('btnPause').textContent = '⏸';
+      $('statusPill').textContent = 'En vivo'; $('statusPill').classList.add('live');
+    }
+  }
+  async function stopTracking(){
+    if(!tracking) return;
+    tracking = false;
+    if(watchId!==null) navigator.geolocation.clearWatch(watchId);
+    if(timerInterval) clearInterval(timerInterval);
+    const elapsedSec = currentElapsedSec();
+    const distKm = distanceM/1000;
+    if(distKm > 0.03){
+      const elapsedH = elapsedSec/3600;
+      const kmh = elapsedH>0 ? distKm/elapsedH : 0;
+      const met = metForSpeed(kmh || 4);
+      const kcal = Math.round(met * weightKg * elapsedH);
+      const steps = Math.round(distanceM/strideM);
+      const today = new Date();
+      const dateStr = today.toLocaleDateString('es-ES', {day:'2-digit', month:'short'});
+      await saveWalk({
+        date: dateStr, distance: distKm.toFixed(2), steps,
+        kcal, duration: fmtTime(elapsedSec)
+      });
+      $('saveToast').classList.add('show');
+      setTimeout(()=> $('saveToast').classList.remove('show'), 2200);
+    }
+    // reset UI for a new walk, keep the last drawn trail visible until next start
+    $('statusPill').textContent = 'Detenido'; $('statusPill').classList.remove('live');
+    $('btnMain').style.display = 'block'; $('btnMain').textContent = 'Empezar';
+    $('btnMain').classList.remove('stop');
+    $('btnPause').style.display = 'none';
+    $('btnStop').style.display = 'none';
+    $('accuracyNote').textContent = 'Pulsa Empezar y concede acceso a tu ubicación.';
+  }
+
+  $('btnMain').addEventListener('click', startTracking);
+  $('btnPause').addEventListener('click', togglePause);
+  $('btnStop').addEventListener('click', stopTracking);
+
+  // ---------- init ----------
+  (async function init(){
+    await loadSettings();
+    resizeCanvas();
+    const hist = await loadHistory();
+    renderHistory(hist);
+
+    const isSecure = window.isSecureContext;
+    if(!isSecure){
+      $('accuracyNote').textContent = 'Esta página se abrió sin conexión segura (https). El GPS del navegador no funcionará así — ábrela desde el enlace web original, no desde un archivo descargado, o instálala con "Añadir a pantalla de inicio" desde el navegador.';
+    } else if(!STORAGE_OK){
+      $('accuracyNote').textContent = 'Pulsa Empezar y concede acceso a tu ubicación. Nota: el navegador está bloqueando el guardado local (modo incógnito o cookies desactivadas), así que el historial no se conservará entre sesiones.';
+    }
+  })();
+})();
+</script>
+</body>
+</html>
