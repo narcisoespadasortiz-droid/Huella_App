@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   :root{
     --bg: #EFECE2;
@@ -43,7 +45,8 @@
   .trailhead .label{ font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-soft); font-weight:600; }
   .status-pill{ font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; background:var(--line-soft); color:var(--ink-soft); }
   .status-pill.live{ background:var(--sage); color:#fff; }
-  #trailCanvas{ display:block; width:100%; height:180px; }
+  #trailMap{ width:100%; height:230px; background:var(--line-soft); }
+  #trailMap .leaflet-control-attribution{ font-size:9px; }
   .accuracy-note{ font-size:11px; color:var(--ink-soft); padding:6px 14px 12px; }
 
   /* stat readout */
@@ -114,7 +117,7 @@
       <span class="label">Recorrido en vivo</span>
       <span class="status-pill" id="statusPill">Detenido</span>
     </div>
-    <canvas id="trailCanvas"></canvas>
+    <div id="trailMap"></div>
     <div class="accuracy-note" id="accuracyNote">Pulsa Empezar y concede acceso a tu ubicación.</div>
   </div>
 
@@ -165,14 +168,12 @@
 <script>
 (function(){
   const $ = id => document.getElementById(id);
-  const canvas = $('trailCanvas');
-  const ctx = canvas.getContext('2d');
+  let map, trailLine, posMarker, startMarker;
 
   let watchId = null;
   let tracking = false;
   let paused = false;
   let points = []; // {lat, lon, t}
-  let pathPx = []; // canvas-space points for drawing
   let distanceM = 0;
   let startTime = null;
   let elapsedBeforePause = 0;
@@ -262,64 +263,40 @@
     return 6.0;
   }
 
-  // ---------- canvas trail ----------
-  function resizeCanvas(){
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    drawTrail();
+  // ---------- mapa real (Leaflet + OpenStreetMap) ----------
+  function initMap(){
+    map = L.map('trailMap', { zoomControl:false, attributionControl:true })
+      .setView([40.3010, -3.8440], 15); // vista inicial: zona de Griñón, se recentra al primer punto GPS
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    trailLine = L.polyline([], { color: '#5F7A52', weight: 4, lineCap: 'round', lineJoin: 'round' }).addTo(map);
   }
-  window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('resize', () => { if(map) map.invalidateSize(); });
 
-  function drawTrail(){
-    const w = canvas.clientWidth, h = canvas.clientHeight;
-    ctx.clearRect(0,0,w,h);
-    // contour-line background
-    ctx.strokeStyle = 'rgba(95,122,82,0.10)';
-    ctx.lineWidth = 1;
-    for(let i=0;i<5;i++){
-      ctx.beginPath();
-      const yy = (h/5)*i + 14;
-      ctx.moveTo(0, yy);
-      for(let x=0;x<=w;x+=20){ ctx.lineTo(x, yy + Math.sin((x/40)+i)*6); }
-      ctx.stroke();
+  function resetMapTrail(){
+    if(!map) return;
+    trailLine.setLatLngs([]);
+    if(posMarker){ map.removeLayer(posMarker); posMarker = null; }
+    if(startMarker){ map.removeLayer(startMarker); startMarker = null; }
+  }
+
+  function updateMapTrail(lat, lon, isFirst){
+    if(!map) return;
+    trailLine.addLatLng([lat, lon]);
+    if(isFirst){
+      startMarker = L.circleMarker([lat, lon], { radius:6, color:'#B9812A', fillColor:'#B9812A', fillOpacity:1, weight:2 }).addTo(map);
+      map.setView([lat, lon], 17);
+    } else {
+      map.panTo([lat, lon], { animate: true });
     }
-    if(points.length < 1) return;
-    // project lat/lon to local meters relative to first point, then fit to canvas
-    const lat0 = points[0].lat, lon0 = points[0].lon;
-    const mPerDegLat = 111320;
-    const mPerDegLon = 111320 * Math.cos(lat0*Math.PI/180);
-    const proj = points.map(p => ({
-      x: (p.lon-lon0)*mPerDegLon,
-      y: -(p.lat-lat0)*mPerDegLat
-    }));
-    let minX=0,maxX=0,minY=0,maxY=0;
-    proj.forEach(p=>{ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y); });
-    const spanX = Math.max(maxX-minX, 20), spanY = Math.max(maxY-minY, 20);
-    const pad = 24;
-    const scale = Math.min((w-2*pad)/spanX, (h-2*pad)/spanY);
-    const cx = w/2, cy = h/2;
-    const midX = (minX+maxX)/2, midY=(minY+maxY)/2;
-    const toPx = p => ({ x: cx + (p.x-midX)*scale, y: cy + (p.y-midY)*scale });
-
-    ctx.strokeStyle = '#5F7A52';
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    proj.forEach((p,i)=>{ const px = toPx(p); if(i===0) ctx.moveTo(px.x,px.y); else ctx.lineTo(px.x,px.y); });
-    ctx.stroke();
-
-    // start marker
-    const startPx = toPx(proj[0]);
-    ctx.fillStyle = '#B9812A';
-    ctx.beginPath(); ctx.arc(startPx.x, startPx.y, 4, 0, 7); ctx.fill();
-    // current position marker
-    const lastPx = toPx(proj[proj.length-1]);
-    ctx.fillStyle = '#A44536';
-    ctx.beginPath(); ctx.arc(lastPx.x, lastPx.y, 5, 0, 7); ctx.fill();
+    if(!posMarker){
+      posMarker = L.circleMarker([lat, lon], { radius:7, color:'#A44536', fillColor:'#A44536', fillOpacity:1, weight:2 }).addTo(map);
+    } else {
+      posMarker.setLatLng([lat, lon]);
+    }
   }
 
   // ---------- tracking ----------
@@ -368,7 +345,7 @@
     lastGoodFix = newPoint;
     points.push(newPoint);
     $('accuracyNote').textContent = `Buena señal (±${Math.round(accuracy)} m) · ${points.length} puntos`;
-    drawTrail();
+    updateMapTrail(latitude, longitude, points.length === 1);
     updateStats();
   }
   function onPositionError(err){
@@ -395,7 +372,8 @@
       return;
     }
     tracking = true; paused = false;
-    points = []; pathPx = []; distanceM = 0; lastGoodFix = null;
+    points = []; distanceM = 0; lastGoodFix = null;
+    resetMapTrail();
     startTime = Date.now(); elapsedBeforePause = 0;
     $('statusPill').textContent = 'En vivo'; $('statusPill').classList.add('live');
     $('btnMain').style.display = 'none';
@@ -458,7 +436,7 @@
   // ---------- init ----------
   (async function init(){
     await loadSettings();
-    resizeCanvas();
+    initMap();
     const hist = await loadHistory();
     renderHistory(hist);
 
