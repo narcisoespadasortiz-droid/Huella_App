@@ -299,6 +299,24 @@
     }
   }
 
+  let wakeLock = null;
+  async function requestWakeLock(){
+    try{
+      if('wakeLock' in navigator){
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      }
+    }catch(e){ /* algunos navegadores lo rechazan si la pestaña no está visible, no pasa nada */ }
+  }
+  async function releaseWakeLock(){
+    if(wakeLock){ try{ await wakeLock.release(); }catch(e){} wakeLock = null; }
+  }
+  document.addEventListener('visibilitychange', async () => {
+    if(document.visibilityState === 'visible' && tracking && !paused){
+      await requestWakeLock();
+    }
+  });
+
   // ---------- tracking ----------
   function fmtTime(sec){
     const m = Math.floor(sec/60).toString().padStart(2,'0');
@@ -383,6 +401,7 @@
       enableHighAccuracy: true, maximumAge: 2000, timeout: 10000
     });
     timerInterval = setInterval(updateStats, 1000);
+    requestWakeLock();
   }
   function togglePause(){
     if(!tracking) return;
@@ -391,11 +410,13 @@
       elapsedBeforePause += Date.now()-startTime;
       $('btnPause').textContent = '▶';
       $('statusPill').textContent = 'Pausado'; $('statusPill').classList.remove('live');
+      releaseWakeLock();
     } else {
       paused = false;
       startTime = Date.now();
       $('btnPause').textContent = '⏸';
       $('statusPill').textContent = 'En vivo'; $('statusPill').classList.add('live');
+      requestWakeLock();
     }
   }
   async function stopTracking(){
@@ -403,6 +424,7 @@
     tracking = false;
     if(watchId!==null) navigator.geolocation.clearWatch(watchId);
     if(timerInterval) clearInterval(timerInterval);
+    releaseWakeLock();
     const elapsedSec = currentElapsedSec();
     const distKm = distanceM/1000;
     if(distKm > 0.03){
@@ -445,6 +467,8 @@
       $('accuracyNote').textContent = 'Esta página se abrió sin conexión segura (https). El GPS del navegador no funcionará así — ábrela desde el enlace web original, no desde un archivo descargado, o instálala con "Añadir a pantalla de inicio" desde el navegador.';
     } else if(!STORAGE_OK){
       $('accuracyNote').textContent = 'Pulsa Empezar y concede acceso a tu ubicación. Nota: el navegador está bloqueando el guardado local (modo incógnito o cookies desactivadas), así que el historial no se conservará entre sesiones.';
+    } else if(!('wakeLock' in navigator)){
+      $('accuracyNote').textContent = 'Pulsa Empezar y concede acceso a tu ubicación. Tu navegador no soporta mantener la pantalla encendida automáticamente — actualiza Chrome si puedes, o mantenla tú manualmente durante el paseo.';
     }
   })();
 })();
